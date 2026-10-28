@@ -1,0 +1,45 @@
+# dsh-tunnel-preview：一行插件，给 agent 一把「开/关公网入口」的钥匙。
+#
+# 插件本体（index.js）自己监听 127.0.0.1:<listen>，Cloudflare 命名隧道的 catch-all
+# 指向这个地址；它按 Host 里的端口号把请求转发到 127.0.0.1:<port>，HTTP 与 WebSocket
+# 都走同一条闸门。登记表落盘在 stateDir/previews.json，宿主重启不丢。
+#
+# 这份 config 就是权威值：loader 的 patch 是**整对象覆盖**而不是深合并，如果将来在
+# profile 的 cordis.patch.yml 里给 tunnel-preview 写 config，宿主就只看那一份，
+# 这里的值全部失效。改之前先想清楚为什么。
+- insert:
+    - id: tunnel-preview
+      name: 'dsh-tunnel-preview'
+      config:
+        # 反代监听；隧道 config.yml 的 catch-all 必须指向同一处
+        listen: 9999
+        # 子域后缀：3000.metapoint.tech
+        domain: metapoint.tech
+        # 空 = $HOME/devpreview（token、previews.json 都在这里，沿用既有约定）
+        stateDir: ''
+        tokenFile: ''
+        stateFile: ''
+        # 命名隧道名与该隧道的 config
+        tunnelName: dsh-dev
+        cloudflared: ''
+        tunnelConfig: ''
+        # 由插件托管 cloudflared：宿主退出时一并带走，崩了自动重连
+        manageTunnel: true
+        # 登记端口时自动建 <port>.<domain> 的 CNAME（已有则跳过）
+        manageDns: true
+        # 永不公开的端口（VNC/调试/内部设施）
+        deny: [3080, 5241, 5244, 5246, 5900, 6080, 8731, 8788, 8792, 8931, 9222]
+        # 转发时改写 Host/Origin/Referer，避免 dev server 的 host 校验拦下来
+        rewriteHost: true
+        # 域级 Cookie 有效期（秒），用 query 验过一次之后所有端口子域免 token
+        cookieMaxAge: 2592000
+        # 允许公开的最小端口
+        minPort: 1024
+        # Cloudflare API 绑定：在 DSH「插件」页 → tunnel-preview 的「绑定 Cloudflare」
+        # 表单里粘贴 token 保存即完成绑定（三个字段都是 volatile，热生效，不重挂插件），
+        # 之后 DNS 记录由插件自己建、自己删（不再依赖 cert.pem）。留空也能用，只是只建不删。
+        cloudflareApiToken: ''
+        cloudflareAccountId: ''
+        cloudflareZoneId: ''
+        # 注销时怎么处理 DNS 记录：delete 删除（需已绑定 apiToken）/ keep 保留
+        dnsOnUnregister: delete

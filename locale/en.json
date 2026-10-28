@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Tunnel Preview",
+    "description": "Lets agents publish a listening container port as https://<port>.metapoint.tech through the Cloudflare tunnel and retire it afterwards; HTTP and HMR WebSockets share one token gate backed by a domain cookie."
+  }
+}
