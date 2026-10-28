@@ -82,7 +82,7 @@ const DEFAULTS = {
  */
 export const Config = z.object({
   listen: z.natural().min(1024).max(65535).default(DEFAULTS.listen).description('反代监听端口（隧道 catch-all 指向这里）'),
-  domain: z.string().default(DEFAULTS.domain).description('子域后缀：<端口>.<domain>'),
+  domain: z.string().default(DEFAULTS.domain).volatile().description('子域后缀：<端口>.<domain>'),
   stateDir: z.string().default('').description('状态目录，空 = $HOME/devpreview'),
   tokenFile: z.string().default('').description('专用 token 文件，空 = stateDir/token'),
   stateFile: z.string().default('').description('登记表文件，空 = stateDir/previews.json'),
@@ -97,7 +97,7 @@ export const Config = z.object({
   minPort: z.natural().default(DEFAULTS.minPort).description('允许公开的最小端口'),
   /**
    * Cloudflare API 绑定（一键绑定：在插件页的表单里粘贴 token 保存即完成）。
-   * 三个字段都是 volatile：改它们的值只触发 `loader/volatile-update`，不重挂插件，
+   * 与上面的 domain 一样是 volatile：改值只触发 `loader/volatile-update`，不重挂插件，
    * 插件在监听里重新 resolve 并热再绑定。
    */
   cloudflareApiToken: z
@@ -301,9 +301,11 @@ export function apply(ctx, rawConfig = {}) {
       zoneId: pick(flat.zoneId, legacy.zoneId, hadFlat),
     };
   };
+  const resolveDomain = () => String(plain(rawConfig.domain) ?? DEFAULTS.domain).trim() || DEFAULTS.domain;
   const cfg = {
     ...DEFAULTS,
     ...rawConfig,
+    domain: resolveDomain(),
     deny: [...(rawConfig.deny || DEFAULTS.deny)],
     cloudflare: resolveCf(),
   };
@@ -394,13 +396,19 @@ export function apply(ctx, rawConfig = {}) {
    * preview_list 里展示的绑定状态。
    */
   ctx.on('loader/volatile-update', (paths) => {
-    const changed = (paths ?? []).some((p) => p && String(p[0]).startsWith('cloudflare'));
-    if (!changed) return;
-    cfg.cloudflare = resolveCf();
-    // refresh 复原初始状态；用户可能在绑定期间就调用建删，清掉 pending 信号
-    cfBinding = bindCloudflare();
-    cfBinding.then(() => log(`Cloudflare 配置已热更新：${cf.detail}`)).catch((e) => log(`Cloudflare 热更新失败 —— ${e.message}`));
-    log(`检测到 cloudflare 配置变更（${(paths ?? []).map((p) => p.join('.')).join(', ')}），重新绑定`);
+    const cfChanged = (paths ?? []).some((p) => p && String(p[0]).startsWith('cloudflare'));
+    const domainChanged = (paths ?? []).some((p) => p && p[0] === 'domain');
+    if (domainChanged) {
+      cfg.domain = resolveDomain();
+      log(`检测到域名配置变更：${cfg.domain}`);
+    }
+    if (cfChanged || domainChanged) {
+      cfg.cloudflare = resolveCf();
+      // refresh 复原初始状态；用户可能在绑定期间就调用建删，清掉 pending 信号
+      cfBinding = bindCloudflare();
+      cfBinding.then(() => log(`Cloudflare 配置已热更新：${cf.detail}`)).catch((e) => log(`Cloudflare 热更新失败 —— ${e.message}`));
+      log(`检测到配置变更（${(paths ?? []).map((p) => p.join('.')).join(', ')}），重新绑定`);
+    }
   });
 
   /* ---------------- 登记表 ---------------- */

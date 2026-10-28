@@ -56,7 +56,7 @@
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `listen` | `9999` | 反代监听地址，必须与隧道 config 的 catch-all 一致 |
-| `domain` | `example.com` | 子域后缀（主域名） |
+| `domain` | `example.com` | 子域后缀（主域名）。设置页「公网域名」可改，保存立即生效 |
 | `stateDir` | `$HOME/devpreview` | token、`previews.json` 落盘目录 |
 | `tunnelName` | `dsh-dev` | `cloudflared tunnel route dns` 用的隧道名 |
 | `cloudflared` | `$HOME/bin/cloudflared` | 可执行文件 |
@@ -71,6 +71,16 @@
 | `cloudflareZoneId` / `cloudflareAccountId` | 空 | 一般留空，自动探测 |
 | `dnsOnUnregister` | `delete` | 注销时的 DNS：`delete` 删（需已绑定 token）/ `keep` 留 |
 
+## 用哪个域名
+
+预览地址是 `https://<端口>.<domain>`。域名不写死在代码里，在插件设置里改：
+
+1. 打开 **DSH 侧栏 → 插件 → tunnel-preview**。
+2. 在表单最上面的 **「公网域名」** 填主域名，不要带 `https://` 和端口，例如 `example.com`。
+3. 点 **保存**。`domain` 是 volatile 字段：宿主只更新这一项并重跑绑定，不重载插件。已填 token 时会按新域名重新查 zone。
+
+出厂默认是插件自带 `cordis.patch.yml` 里的 `domain: example.com`。如果在 **profile** 的 `cordis.patch.yml` 里给 `tunnel-preview` 写了 `config`，loader 是整对象覆盖：那一份里的 `domain` 才是初始值，插件自带的这份不再生效。之后仍以设置页保存的值为准。
+
 ## 在设置里一键绑定 Cloudflare
 
 不绑定也能用：建记录走 `cloudflared tunnel route dns`，只是**删不掉**。要让插件自己管 DNS：
@@ -83,11 +93,11 @@
 2. 页面底部点击 **Continue to summary** → **Create Token**
 3. 点击 **Copy** 复制生成的 Token，回到 DSH 插件设置页粘贴并保存即可！
 
-保存即热生效（不重挂插件）：宿主只更新那三个 volatile 字段并重跑绑定。`preview_list()` 顶部会显示
+保存即热生效（不重挂插件）：宿主只更新 `domain` 和那三个 Cloudflare volatile 字段并重跑绑定。`preview_list()` 顶部会显示
 `Cloudflare API：已绑定（zone example.com …）`；失败也在这里写明原因
 （token 无效 / 缺 Zone.Zone Read / 网络不通），不会静默降级。
 
-表单只认三个**顶层**字段（`cloudflareApiToken` / `cloudflareAccountId` / `cloudflareZoneId`）。
+表单只认四个**顶层**字段（`domain` / `cloudflareApiToken` / `cloudflareAccountId` / `cloudflareZoneId`）。
 旧的嵌套 `cloudflare: { apiToken, accountId, zoneId }` 仍能被读到，但只要 patch 里写过任一
 平铺字段，就以平铺为准。token 落在 profile 的 patch 里，字段标了 `role('secret')`：
 设置页与远程调用方读回时是占位符，不回显明文。

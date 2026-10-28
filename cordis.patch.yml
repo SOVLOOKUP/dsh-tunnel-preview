@@ -35,8 +35,8 @@
         cookieMaxAge: 2592000
         # 允许公开的最小端口
         minPort: 1024
-        # Cloudflare API 绑定：在 DSH「插件」页 → tunnel-preview 的「绑定 Cloudflare」
-        # 表单里粘贴 token 保存即完成绑定（三个字段都是 volatile，热生效，不重挂插件），
+        # Cloudflare API 绑定：在 DSH「插件」页 → tunnel-preview 的表单里粘贴 token
+        # 保存即完成绑定（domain 与这三个字段都是 volatile，热生效，不重挂插件），
         # 之后 DNS 记录由插件自己建、自己删（不再依赖 cert.pem）。留空也能用，只是只建不删。
         cloudflareApiToken: ''
         cloudflareAccountId: ''

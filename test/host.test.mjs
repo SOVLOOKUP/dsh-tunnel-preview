@@ -56,7 +56,8 @@ test('cfReason 把 Cloudflare 错误体压成一句人话', () => {
 
 test('Config schema 收得下 patch 里的既有配置，并给 cloudflare 三个平铺字段补默认值', () => {
   const resolved = Config({ domain: 'example.com', deny: [5900] });
-  assert.equal(resolved.domain, 'example.com');
+  assert.equal(typeof resolved.domain.get, 'function');
+  assert.equal(resolved.domain.get(), 'example.com');
   assert.equal(resolved.listen, 9999);
   assert.equal(resolved.dnsOnUnregister, 'delete');
   // volatile 字段解析后是 Volatile 引用（.get() 取当前值），这正是「热更新不重挂」的机制
