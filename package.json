@@ -1,0 +1,61 @@
+{
+  "name": "dsh-tunnel-preview",
+  "version": "0.2.0",
+  "description": "Tunnel preview for DeepSeek Harness: agents register a listening port and get a public HTTPS URL at https://<port>.<domain> through the existing Cloudflare tunnel, then unregister it when done. Bind a Cloudflare API token in the plugin settings to let it create and delete the DNS records itself.",
+  "type": "module",
+  "license": "MIT",
+  "author": "SOVLOOKUP",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SOVLOOKUP/dsh-tunnel-preview.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SOVLOOKUP/dsh-tunnel-preview/issues"
+  },
+  "homepage": "https://github.com/SOVLOOKUP/dsh-tunnel-preview#readme",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "lib/client.js",
+    "README.md",
+    "test/*.mjs"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "tunnel",
+    "cloudflared",
+    "preview",
+    "proxy"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5"
+  }
+}

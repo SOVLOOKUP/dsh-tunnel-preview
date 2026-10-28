@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "隧道预览",
+    "description": "让 agent 把容器里正在监听的端口登记成 https://<端口>.<你的域名> 的公网入口，用完自己注销；HTTP 与 HMR 的 WebSocket 同一条闸门，token 校验走域级 Cookie。"
+  }
+}
