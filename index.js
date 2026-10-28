@@ -23,6 +23,7 @@
  * 通行由登记表决定，重新登记同一个端口因此是瞬时的。两种模式在工具返回里都写明。
  */
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -179,23 +180,76 @@ export function cfReason(body, status) {
 
 const CF_BASE = 'https://api.cloudflare.com/client/v4';
 
+/**
+ * 裸 HTTP(S) 请求：**不走环境代理**（`agent: false`）。
+ *
+ * 为什么要有这条兜底：Node 22+ 开了 `NODE_USE_ENV_PROXY=1` 之后，`fetch` 和核心
+ * http/https 都会走 `HTTPS_PROXY`。有些容器里那个代理是白名单式的，对
+ * `api.cloudflare.com` 直接掐 TLS（表现为 `fetch failed` /
+ * `Client network socket disconnected before secure TLS connection was established`），
+ * 而容器直连 CF 边缘其实是通的（cloudflared 隧道就一直连得上）。所以代理失败时用
+ * 这条直连再试一次。
+ */
+function rawJson(url, { method = 'GET', headers = {}, body = '', timeout = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const mod = u.protocol === 'http:' ? http : https;
+    const req = mod.request(
+      {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || (u.protocol === 'http:' ? 80 : 443),
+        path: u.pathname + u.search,
+        method,
+        headers: body ? { ...headers, 'content-length': Buffer.byteLength(body) } : headers,
+        agent: false,
+        servername: u.protocol === 'https:' ? u.hostname : undefined,
+      },
+      (res) => {
+        let raw = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (raw += c));
+        res.on('end', () => {
+          let parsed = {};
+          try {
+            parsed = raw ? JSON.parse(raw) : {};
+          } catch {}
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300 && parsed?.success !== false, status: res.statusCode, body: parsed });
+        });
+      },
+    );
+    req.setTimeout(timeout, () => req.destroy(new Error(`timeout after ${timeout}ms`)));
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
 /** 带 token 的 API 客户端。baseUrl 可换——单测把它指向本地桩，不碰真 Cloudflare。 */
 export function makeCfClient(token, baseUrl = CF_BASE) {
   return async function cfApi(pathname, init = {}) {
-    const res = await fetch(baseUrl + pathname, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-        ...(init.headers || {}),
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-    let body = {};
+    const url = baseUrl + pathname;
+    const headers = {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      ...(init.headers || {}),
+    };
+    const body = typeof init.body === 'string' ? init.body : init.body == null ? '' : String(init.body);
     try {
-      body = await res.json();
-    } catch {}
-    return { ok: res.ok && body?.success !== false, status: res.status, body };
+      const res = await fetch(url, { ...init, headers, signal: AbortSignal.timeout(15000) });
+      let parsed = {};
+      try {
+        parsed = await res.json();
+      } catch {}
+      return { ok: res.ok && parsed?.success !== false, status: res.status, body: parsed };
+    } catch (e) {
+      // 代理把请求掐了（不是 Cloudflare 回的错），改走直连再试一次。
+      try {
+        return await rawJson(url, { method: init.method || 'GET', headers, body });
+      } catch {
+        throw e; // 两边都不通：把原始 fetch 错误抛给调用方，语义还是「网络层挂了」
+      }
+    }
   };
 }
 
@@ -229,7 +283,17 @@ export async function cfBind({ cfApi, domain, zoneId = '', accountId = '' }) {
 }
 
 /** 建 `<port>.<domain>` → `<tunnelId>.cfargotunnel.com`；已存在且指向本隧道算成功。 */
-export async function cfEnsureDns(cfApi, { zoneId, domain, port, tunnelId }) {
+export async function cfEnsureDns(cfApi, opts) {
+  try {
+    return await cfEnsureDnsOrThrow(cfApi, opts);
+  } catch (e) {
+    // 网络层故障（连不上 api.cloudflare.com、TLS 被代理拦掉、超时）不能让登记整体失败：
+    // 「记录没建成」只是域名可能解析不到，不是「端口没登记」，调用方把它当 detail 报出去即可。
+    return { ok: false, detail: `DNS API 调用异常：${e?.message || e}` };
+  }
+}
+
+async function cfEnsureDnsOrThrow(cfApi, { zoneId, domain, port, tunnelId }) {
   if (!tunnelId) return { ok: false, detail: '读不到隧道 UUID（tunnelConfig 里没有 tunnel: 行）' };
   const host = `${port}.${domain}`;
   const found = await cfApi(`/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(host)}&per_page=1`);
@@ -254,7 +318,17 @@ export async function cfEnsureDns(cfApi, { zoneId, domain, port, tunnelId }) {
 }
 
 /** 删 `<port>.<domain>` 的 CNAME；本来没有也算成功。 */
-export async function cfRemoveDns(cfApi, { zoneId, domain, port }) {
+export async function cfRemoveDns(cfApi, opts) {
+  try {
+    return await cfRemoveDnsOrThrow(cfApi, opts);
+  } catch (e) {
+    // 关键：注销时的 DNS 清理是尽力而为。这里一抛，doUnregister 就会在 delete entries[port]
+    // 之前中断——登记项留着、入口照旧，用户看到的就是「点了注销没反应」。
+    return { ok: false, detail: `DNS API 调用异常：${e?.message || e}` };
+  }
+}
+
+async function cfRemoveDnsOrThrow(cfApi, { zoneId, domain, port }) {
   const host = `${port}.${domain}`;
   const found = await cfApi(`/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(host)}&per_page=1`);
   if (!found.ok) return { ok: false, detail: cfReason(found.body, found.status) };

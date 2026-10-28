@@ -152,3 +152,34 @@ test('cfRemoveDns：删掉记录；本来没有也算成功；读不到隧道 UU
     await s.close();
   }
 });
+
+/* ---------------- 网络故障：DNS 清理不能把注销整条链拖死 ---------------- */
+
+const brokenCf = async () => {
+  // 模拟 fetch 层直接炸：连不上 api.cloudflare.com / TLS 被代理掐断 / AbortSignal 超时
+  const err = new TypeError('fetch failed');
+  err.cause = new Error('Client network socket disconnected before secure TLS connection was established');
+  throw err;
+};
+
+test('cfRemoveDns：cfApi 抛网络异常时返回 ok:false，绝不向上抛', async () => {
+  const r = await cfRemoveDns(brokenCf, { zoneId: 'zone-1', domain: DOMAIN, port: 3000 });
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /DNS API 调用异常/);
+  assert.match(r.detail, /fetch failed/);
+});
+
+test('cfEnsureDns：cfApi 抛网络异常时同样只报 detail，不抛', async () => {
+  const r = await cfEnsureDns(brokenCf, { zoneId: 'zone-1', domain: DOMAIN, port: 3000, tunnelId: TUNNEL });
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /DNS API 调用异常/);
+});
+
+test('走真 HTTP 桩但端口关掉（连接被拒）时，注销用的 cfRemoveDns 仍返回 ok:false', async () => {
+  const s = await stub([]);
+  const base = s.base;
+  await s.close(); // 桩没了 → fetch 会 ECONNREFUSED
+  const r = await cfRemoveDns(makeCfClient('good', base), { zoneId: 'zone-1', domain: DOMAIN, port: 3000 });
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /DNS API 调用异常/);
+});

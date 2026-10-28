@@ -112,6 +112,14 @@
 
 - **DNS 记录删不删，看有没有绑定**：未绑定 API token 时建记录只能走 CLI，于是只建不删
   （留着无害，通不通由登记表决定）；绑定后默认 `dnsOnUnregister=delete`，注销即清干净。
+- **DNS 失败不阻塞登记表**：建/删记录是尽力而为。Cloudflare API 打不通时，登记照做、
+  注销照做（登记表里删掉那一行，公网立刻 403），只是 tool 输出与 GUI 会明说「记录没删掉」。
+  早先的版本在这里会直接抛错，导致点「注销服务」整条链中断——看着就是「点了没反应」。
+- **容器里的 `HTTPS_PROXY` 会掐掉 `api.cloudflare.com`**：开了 `NODE_USE_ENV_PROXY=1` 的
+  宿主里，`fetch` 与核心 http/https 都会走 `HTTPS_PROXY`；白名单式代理对 Cloudflare API
+  常常直接断 TLS（`fetch failed` / `socket disconnected before secure TLS connection`），
+  而直连 CF 边缘是通的。所以 API 客户端在代理失败时会用 `agent: false` 直连重试一次
+  （见 `makeCfClient`）。
 - **公网可见**：这是真的公网入口，token 只挡「猜不到」的人。要让陌生人彻底进不来，
   应在 Cloudflare 侧加 Access 策略，而不是依赖这里的 token。
 - **只支持一级子域**：`5173.example.com` 可以，`5173.dev.example.com` 不行
